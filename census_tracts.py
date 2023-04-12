@@ -12,3 +12,4 @@ fig6, ax = plt.subplots(figsize=(10,10))
 populations.plot(column='PERCENT_ASIAN_NH', cmap='OrRd', legend=True, ax=ax)
 ax.set_title('Population of black percentage')
 plt.show()
+
