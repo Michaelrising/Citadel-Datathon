@@ -1,8 +1,40 @@
-# car crash data sets
+import pandas as pd
+import geopandas as gpd
+import numpy as np
+import seaborn as sns
+from pysal.model import spreg
+from pysal.lib import weights
+import geopandas as gpd
+from shapely.geometry import Polygon
+import matplotlib.pyplot as plt
+from esda.moran import Moran
+import pymc3 as pm
+import contextily as ctx
+from pymining import itemmining, assocrules, perftesting
 
+# car crash data sets
+grid = gpd.read_file('grid_data/grid_data.shp')
+
+crash_info_commercials = pd.read_csv('APAC_2023_Datasets/Crashes/crash_info_commericial_vehicles.csv')
+crash_flag_info = pd.read_csv('APAC_2023_Datasets/Crashes/crash_info_flag_variables.csv')
+crash_info_motor = pd.read_csv('APAC_2023_Datasets/Crashes/crash_info_motorcycle.csv')
+crash_info_trialed = pd.read_csv('APAC_2023_Datasets/Crashes/crash_info_trailed_vehicles.csv')
 crash_info_vehicle = pd.read_csv('APAC_2023_Datasets/Crashes/crash_info_vehicles.csv')
 crash_info_roadway = pd.read_csv('APAC_2023_Datasets/Crashes/crash_info_roadway.csv')
 crash_info_people = pd.read_csv('APAC_2023_Datasets/Crashes/crash_info_people.csv')
+crash_general = pd.read_csv('APAC_2023_Datasets/Crashes/crash_info_general.csv')
+
+# merge all the crash related data sets by CRN
+crash_info = crash_info_commercials.merge(crash_flag_info, on='CRN', how='left').\
+                                    merge(crash_info_motor, on='CRN', how='left').\
+                                    merge(crash_info_trialed, on='CRN', how='left').\
+                                    merge(crash_info_vehicle, on='CRN', how='left').\
+                                    merge(crash_info_roadway, on='CRN', how='left').\
+                                    merge(crash_info_people, on='CRN', how='left').\
+                                    merge(crash_general, on='CRN', how='left').reset_index(drop=True)
+
+
+
 
 crash_severity = crash_general[['CRN', 'CRASH_YEAR', 'CRASH_MONTH', 'MAX_SEVERITY_LEVEL', 'INJURY_COUNT', 'ILLUMINATION', 'WEATHER1', 'ROAD_CONDITION', 'LATITUDE', 'LONGITUDE']].dropna()
 crash_severity = crash_severity.merge(crash_info_vehicle[['CRN', 'TRAVEL_SPD', 'DVR_PRES_IND']], on='CRN', how='left')

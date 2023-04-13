@@ -1,12 +1,10 @@
 import pandas as pd
 import geopandas as gpd
-import numpy as np
-import seaborn as sns
-from pysal.model import spreg
-from pysal.lib import weights
+
 import geopandas as gpd
 from shapely.geometry import Polygon
 import matplotlib.pyplot as plt
+from esda.moran import Moran
 import pymc3 as pm
 import contextily as ctx
 from utils import convert_to_lat, convert_to_long
@@ -99,7 +97,7 @@ for i in range(len(grid)):
         grid.loc[i, 'hispanic_percentage'] = populations[populations.intersects(grid.loc[i, 'geometry'])]['PERCENT_HISPANIC'].mean()/100
         grid.loc[i, 'men_per_area'] = populations[populations.intersects(grid.loc[i, 'geometry'])]['men_per_area'].mean()
 
-
+grid.fillna(0, inplace=True)
 crime = pd.read_csv('APAC_2023_Datasets/Traffic, Investigations _ Other/crimes.csv')
 crime = gpd.GeoDataFrame(crime, geometry=gpd.points_from_xy(crime.lng, crime.lat)).set_crs(epsg=4326)
 crime = crime.to_crs(grid.crs)
@@ -145,9 +143,6 @@ traffic_volume = traffic_volume.groupby('index_right').mean().reset_index()
 traffic_volume = traffic_volume[['index_right', 'recordnum']].set_index('index_right').reindex(range(len(grid))).fillna(traffic_volume['recordnum'].mean()).reset_index()
 
 grid['traffic_volume'] = traffic_volume['recordnum']/traffic_volume['recordnum'].max()
-grid.plot(column='traffic_volume', cmap='Blues', legend=True)
-plt.title('Traffic Volume in Philadelphia by Grid Cells')
-plt.show()
 
 
 # plot all the features in one go (3 by 3 subplots) for visualization
@@ -173,30 +168,7 @@ axs[2, 2].set_title('Crash count in Philadelphia by Grid Cells')
 plt.show()
 
 
-
-grid['grid_index'] = grid.index.astype(int)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+from scipy import  stats
 
 
 
