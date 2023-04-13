@@ -68,6 +68,24 @@ X = data.drop(['crash_count', 'geometry'], axis=1).values
 # Queen contiguity
 w_queen = weights.contiguity.Queen.from_dataframe(data)
 
+# # Moran's I analysis for each variable
+# np.random.seed(123456)
+# # Calculate Moran's I for each variable
+# mi_results = [
+#     Moran(data[variable], w_queen) for variable in data.columns
+# ]
+# # Structure results as a list of tuples
+# mi_results = [
+#     (variable, res.I, res.p_sim)
+#     for variable, res in zip(data.columns, mi_results)
+# ]
+# # Display on table
+# table = pd.DataFrame(
+#     mi_results, columns=["Variable", "Moran's I", "P-value"]
+# ).set_index("Variable")
+
+table
+
 # K-nearest neighbors
 k = 4  # Choose the number of nearest neighbors
 w_knn = weights.distance.KNN.from_dataframe(data, k=k)
