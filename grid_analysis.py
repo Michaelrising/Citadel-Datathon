@@ -16,7 +16,7 @@ crash_general = crash_general[crash_general['LATITUDE'].notna() & crash_general[
 crash_general['LATITUDE'] = crash_general['LATITUDE'].apply(convert_to_lat)
 crash_general['LONGITUDE'] = crash_general['LONGITUDE'].apply(convert_to_long)
 crash_points = gpd.points_from_xy(crash_general.LONGITUDE, crash_general.LATITUDE)
-crash_gdf = gpd.GeoDataFrame(geometry=crash_points)
+crash_gdf = gpd.GeoDataFrame(crash_general[['CRN', 'CRASH_YEAR']], geometry=crash_points)
 
 populations = pd.read_csv('APAC_2023_Datasets/Traffic, Investigations _ Other/philadelphia_population_metrics.csv')
 census['GEOID10'] = census['GEOID10'].astype(int)
@@ -66,7 +66,7 @@ grid = gird_filtered.reset_index(drop=True).drop('index', axis=1)
 # then we get the grids that contain crash
 crash_gdf.set_crs(grid.crs, inplace=True)
 # count the number of crash in each grid cell
-crash_counts = gpd.sjoin(crash_gdf, grid, how='left', predicate='within').groupby('index_right').size().reset_index(name='count')
+crash_counts = gpd.sjoin(crash_gdf, grid, how='left', predicate='within').groupby(['index_right', 'CRASH_YEAR']).size().reset_index(name='count')
 # if grid cell does not contain any crash, set the count to 0
 
 crash_counts = crash_counts.set_index('index_right').reindex(range(len(grid))).fillna(0).reset_index()
@@ -105,7 +105,7 @@ crime = crime.to_crs(grid.crs)
 crime_counts = gpd.sjoin(crime, grid, how='left', predicate='within').groupby('index_right').size().reset_index(name='count')
 crime_counts = crime_counts.set_index('index_right').reindex(range(len(grid))).fillna(0).reset_index()
 grid['crime'] = crime_counts['count']
-grid['crime'] = grid['crime'] / grid['crime'].max()
+# grid['crime'] = grid['crime'] / grid['crime'].sum()
 
 police = pd.read_csv('APAC_2023_Datasets/Traffic, Investigations _ Other/police_stations.csv')
 police = gpd.GeoDataFrame(police, geometry=gpd.points_from_xy(police.lng, police.lat)).set_crs(epsg=4326)
@@ -128,7 +128,7 @@ investigation = investigation.to_crs(grid.crs)
 investigation_count = gpd.sjoin(investigation, grid, how='left', predicate='within').groupby('index_right').size().reset_index(name='count')
 investigation_count = investigation_count.set_index('index_right').reindex(range(len(grid))).fillna(0).reset_index()
 grid['investigation'] = investigation_count['count']
-grid['investigation'] = grid['investigation'] / grid['investigation'].max()
+# grid['investigation'] = grid['investigation'] / grid['investigation'].sum()
 
 traffic_volume = pd.read_csv('Data/Traffic_Count_Locations.csv')
 traffic_volume = traffic_volume[traffic_volume['X'].notna() & traffic_volume['Y'].notna()]
@@ -142,8 +142,27 @@ traffic_volume = gpd.sjoin(traffic_volume, grid, how='left', predicate='within')
 traffic_volume = traffic_volume.groupby('index_right').mean().reset_index()
 traffic_volume = traffic_volume[['index_right', 'recordnum']].set_index('index_right').reindex(range(len(grid))).fillna(traffic_volume['recordnum'].mean()).reset_index()
 
-grid['traffic_volume'] = traffic_volume['recordnum']/traffic_volume['recordnum'].max()
+grid['traffic_volume'] = traffic_volume['recordnum'] #/traffic_volume['recordnum'].sum()
 
+streets = gpd.read_file('Data/Street_Centerline/Street_Centerline.shp')#.set_crs(epsg=2272)
+streets = streets.to_crs(grid.crs)
+streets = streets[['LENGTH', 'geometry']]
+# calculate the length of streets in each grid
+grid["street_length"] = 0.0
+
+# Loop through each grid cell
+for i, grid_cell in grid.iterrows():
+    # Clip streets by the current grid cell
+    clipped_streets = gpd.clip(streets, grid_cell.geometry)
+
+    # Calculate the total length of clipped streets within the grid cell
+    street_length_in_cell = clipped_streets["LENGTH"].sum()
+
+    # Update the grid cell's "street_length" value
+    grid.loc[i, "street_length"] = street_length_in_cell
+
+# grid['street_length'] = grid['street_length'] / streets['LENGTH'].sum()
+grid.to_file('grid_data/grid_data.shp')
 
 # plot all the features in one go (3 by 3 subplots) for visualization
 fig, axs = plt.subplots(3, 3, figsize=(15, 15))
