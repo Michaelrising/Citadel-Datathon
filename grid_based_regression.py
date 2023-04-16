@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[23]:
-
 
 import geopandas as gpd
 from shapely.geometry import Polygon
@@ -40,6 +35,12 @@ for i in range(3):
         factor = factor_list[i][j]
         grid_data.plot(column=factor, cmap='Blues', legend=True, ax=axs[i, j])
         axs[i, j].set_title(factor + ' in Philadelphia by Grid Cells')
+plt.savefig('figures/all_spatial_features.png', dpi=300)
+plt.show()
+
+grid_data.plot(column='crash_count', cmap='Blues', legend=True)
+plt.title('Crash Count in Philadelphia by Grid Cells')
+plt.savefig('figures/crash_count.png', dpi=300)
 plt.show()
 
 
@@ -52,7 +53,12 @@ import seaborn as sns
 corr_matrix = grid_data.drop(['geometry'], axis=1).corr()
 
 # Create a heatmap
+fig, ax = plt.subplots(figsize=(10, 8))
 sns.heatmap(np.round(corr_matrix, 2), annot=True, cmap="Blues")
+# rotate the x-axis labels
+plt.xticks(rotation=45, fontsize=12)
+plt.yticks(rotation=0, fontsize=12)
+plt.savefig('figures/correlation_matrix_spatial_features.png', dpi=300)
 plt.show()
 
 
@@ -67,7 +73,7 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 
 # For each X, calculate VIF and save in dataframe
-X = grid_data.drop(['crash_count', 'geometry', 'traffic_volume', 'pop_density', 'crime_level'], axis=1)
+X = grid_data.drop(['crash_count', 'geometry', 'traffic_volume', 'theta_mean', 'phi_mean'], axis=1) # , 'traffic_volume', 'pop_density', 'crime_level'
 vif = pd.DataFrame()
 vif["VIF Factor"] = [variance_inflation_factor(X.values, i) for i in range(X.shape[1])]
 vif["features"] = X.columns
@@ -200,6 +206,7 @@ print(summary)
 
 # Plot the results
 az.plot_trace(trace, var_names=['intercept','alpha_black', 'alpha_crime', 'alpha_police', 'alpha_investigation', 'alpha_street',  'alpha'], figsize=(10, 20)) #'phi'
+plt.savefig('./figures/trace_parameters.png', dpi=300)
 plt.show()
 az.plot_forest(trace, var_names=['intercept', 'alpha_black', 'alpha_crime', 'alpha_police', 'alpha_investigation', 'alpha_street', 'alpha'], combined=True, figsize=(10, 10))
 plt.show()
@@ -265,9 +272,22 @@ diff = diff.sort_values(ascending=False)
 print(diff.head(10))
 
 # point out the top 10 cells with highest difference in the map with red star with symbol size = 10
-fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+
 census = gpd.read_file("Data/Census_Tracts_2010-shp/c16590ca-5adf-4332-aaec-9323b2fa7e7d2020328-1-1jurugw.pr6w.shp")
-census.plot(ax=ax, color='white', edgecolor='black')
+crash_general = pd.read_csv('APAC_2023_Datasets/Crashes/crash_info_general.csv')
+crash_general = crash_general[crash_general['DEC_LAT'].notna() & crash_general['DEC_LONG'].notna()]
+# crash_general['LATITUDE'] = crash_general['LATITUDE'].apply(convert_to_lat)
+# crash_general['LONGITUDE'] = crash_general['LONGITUDE'].apply(convert_to_long)
+crash_points = gpd.points_from_xy(crash_general.DEC_LONG, crash_general.DEC_LAT)
+crash_gdf = gpd.GeoDataFrame(geometry=crash_points)
+
+# count the car crashes in each census tract
+crash_counts = gpd.sjoin(census, crash_gdf, op='contains').groupby(level=0).size().reset_index(name='count')
+# if census tract does not contain any crash, set the count to 0
+crash_counts = crash_counts.set_index('index').reindex(range(len(census))).fillna(0).reset_index()
+
+fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+census.plot(column=crash_counts['count'], cmap='Blues', alpha=0.8, ax=ax)
 # grid_data.plot(column='pred_crash_count', ax=ax, legend=True,  cmap='Blues')
 ax.set_title("Hot spots for car crash in Philadelphia")
 for i in range(10):
@@ -275,7 +295,10 @@ for i in range(10):
     cell = grid_data.loc[cell_idx]
     ax.annotate("*", xy=(cell.geometry.centroid.x, cell.geometry.centroid.y), color='red', size=20, label='Hot spot')
     # ax.annotate(f"{cell_idx}", xy=(cell.geometry.centroid.x, cell.geometry.centroid.y), color='red')
-plt.legend()
+l0 = [plt.Line2D([0], [0], color='red', marker='*', linestyle='None', markersize=10, label='Hot spot')]
+plt.legend(l0, ['Hot spot'], loc='lower right')
+plt.xticks(size=12)
+plt.yticks(size=12)
 plt.savefig("./figures/hotspot_identification.png", dpi=300)
 plt.show()
 
@@ -394,14 +417,14 @@ grid_data["theta_mean"] = trace.posterior["theta"].mean(dim=("chain", "draw")).v
 grid_data["phi_mean"] = trace.posterior["phi"].mean(dim=("chain", "draw")).values
 
 # Plot the posterior means of theta and phi
-fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(20, 10))
+fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(20, 8))
 
 grid_data.plot(column="theta_mean", cmap="Blues", legend=True, ax=ax1)
 ax1.set_title("Posterior mean of theta (Regional random effects)")
 
 grid_data.plot(column="phi_mean", cmap="Blues", legend=True, ax=ax2)
 ax2.set_title("Posterior mean of phi (Spatial clustering effects)")
-
+plt.savefig("./figures/spatial_random_effects.png", dpi=300)
 plt.show()
 
 # Compute Moran's I for the phi posterior mean
@@ -429,10 +452,12 @@ for change in invest_level_changes:
 
 # Plot the changes in crash counts as a function of the change in invest_level
 fig, ax = plt.subplots(1, 1, figsize=(10, 10))
-plt.plot(invest_level_changes * 100, 1-crash_count_changes / mu_crash_count.sum())
-plt.xlabel("Investigation Level in Hot Spots (%)")
-plt.ylabel("Crash Change by Percentage (%)")
-plt.title("Crash Frequency Change vs Investigation Level")
+plt.plot(invest_level_changes * 100, (1-crash_count_changes / mu_crash_count.sum())*100)
+plt.xlabel("Investigation Level in Hot Spots (%)", size=13)
+plt.ylabel("Crash decline by percentage (%)", size=13)
+plt.title("Crash Frequency Change vs Investigation Level", size=14)
 plt.grid()
+plt.xticks(size=12)
+plt.yticks(size=12)
 plt.savefig("./figures/count_frequency_investigation_level_change.png", dpi=300)
 plt.show()

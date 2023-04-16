@@ -161,6 +161,12 @@ for i, grid_cell in grid.iterrows():
     # Update the grid cell's "street_length" value
     grid.loc[i, "street_length"] = street_length_in_cell
 
+intersections = gpd.read_file('Data/Intersection_Controls-shp/a0bf09fb-47f9-4db3-935a-90fbb5956d0d2020330-1-zyti0a.69ghk.shp')
+
+streets.plot(legend=True)
+intersections.plot(ax=plt.gca(), color='red', markersize=1)
+plt.show()
+
 # grid['street_length'] = grid['street_length'] / streets['LENGTH'].sum()
 grid.to_file('grid_data/grid_data.shp')
 
