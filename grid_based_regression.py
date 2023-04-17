@@ -3,7 +3,8 @@ import geopandas as gpd
 from shapely.geometry import Polygon
 import matplotlib.pyplot as plt
 import pandas as pd
-
+import os
+os.environ['USE_PYGEOS'] = '0'
 
 # In[12]:
 
@@ -16,6 +17,7 @@ grid_data['crime_level'] = grid_data['crime_level'] / grid_data['crime_level'].m
 grid_data['invest_level'] = grid_data['invest_level'] / grid_data['invest_level'].max()
 grid_data['traffic_volume'] = grid_data['traffic_volume'] / grid_data['traffic_volume'].max()
 grid_data['street_len'] = grid_data['street_len'] / grid_data['street_len'].max()
+grid_data['police_dis'] = grid_data['police_dis'] / grid_data['police_dis'].max()
 
 # In[13]:
 
@@ -73,7 +75,7 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 
 # For each X, calculate VIF and save in dataframe
-X = grid_data.drop(['crash_count', 'geometry', 'traffic_volume', 'theta_mean', 'phi_mean'], axis=1) # , 'traffic_volume', 'pop_density', 'crime_level'
+X = grid_data.drop(['crash_count', 'geometry', 'traffic_volume', 'crime_level', 'pop_density'], axis=1) # , 'traffic_volume', 'pop_density', 'crime_level'
 vif = pd.DataFrame()
 vif["VIF Factor"] = [variance_inflation_factor(X.values, i) for i in range(X.shape[1])]
 vif["features"] = X.columns
@@ -83,7 +85,7 @@ vif
 # In[ ]:
 
 
-data = grid_data.drop(['traffic_volume', 'pop_density', 'asian_per', 'hispanic_per'], axis=1)
+data = grid_data.drop(['traffic_volume', 'crime_level', 'pop_density'], axis=1)
 data.columns
 
 import arviz as az
@@ -159,11 +161,11 @@ with pm.Model() as car_spatial_negabi_model:
     # Priors
     intercept = pm.Normal("intercept", mu=0, sd=10)
     alpha_0 = pm.Normal("alpha_black", mu=0, sd=10)
-#     alpha_1 = pm.Normal("alpha_asian", mu=0, sd=10)
-#     alpha_2 = pm.Normal("alpha_hispanic", mu=0, sd=10)
+    alpha_1 = pm.Normal("alpha_asian", mu=0, sd=10)
+    alpha_2 = pm.Normal("alpha_hispanic", mu=0, sd=10)
     alpha_3 = pm.Normal("alpha_police", mu=0, sd=10)
     alpha_4 = pm.Normal("alpha_investigation", mu=0, sd=10)
-    alpha_5 = pm.Normal("alpha_crime", mu=0, sd=10)
+    # alpha_5 = pm.Normal("alpha_crime", mu=0, sd=10)
     alpha_6 = pm.Normal("alpha_street", mu=0, sd=10)
 
     # CAR prior
@@ -175,40 +177,48 @@ with pm.Model() as car_spatial_negabi_model:
     # Regional random effects
     theta = pm.Normal("theta", mu=0.0, tau=tau_h, shape=len(data))
     mu_phi = CAR('mu_phi', W, adjacency_matrix, tau_c, shape=len(data))
-    phi = pm.Deterministic("phi", mu_phi- tt.mean(mu_phi))
+    phi = pm.Deterministic("phi", mu_phi ) #- tt.mean(mu_phi))
 
     # Linear regression
     mu = pm.math.exp(intercept +
                      alpha_0 * data['black_per'] +
-#                     alpha_1 * data['asian_per'] +
-#                     alpha_2 * data['hispanic_per'] +
+                    alpha_1 * data['asian_per'] +
+                    alpha_2 * data['hispanic_per'] +
                     alpha_3 * data['police_dis'] +
                     alpha_4 * data['invest_level'] +
-                    alpha_5 * data['crime_level'] +
+                    # alpha_5 * data['crime_level'] +
                     alpha_6 * data['street_len'] +
                     theta + phi)
 
     # Likelihood using negative binomial
-    alpha_ng = pm.Gamma("alpha", alpha=1, beta=1)
+    alpha_ng = pm.Gamma("alpha", alpha=0.5, beta=0.5)
     y_obs = pm.NegativeBinomial("crash_count", mu=mu, alpha=alpha_ng,  observed=data['crash_count'])
 
 with car_spatial_negabi_model:
     # Sample from the posterior
-    trace = pm.sample(draws=2000, tune=1000, chains=3, target_accept=0.95, cores=4, max_treedepth=15,
-        return_inferencedata=True) #,  random_seed=123456) # init='advi',
-
-
+    trace = pm.sample(draws=2000, tune=1000, chains=4, target_accept=0.95, cores=1, max_treedepth=15,
+        return_inferencedata=True, random_seed=123456)
 
 
 # Summarize the results
 summary = pm.summary(trace).round(2)
 print(summary)
 
+with car_spatial_negabi_model:
+    ppc = pm.sample_posterior_predictive(
+        trace, var_names=["intercept", 'alpha_police', 'alpha_street', 'alpha_investigation', 'crash_count'], random_seed=123456
+    )
+
+az.plot_ppc(az.from_pymc3(posterior_predictive=ppc, model=car_spatial_negabi_model))
+plt.xlim(0, 10000)
+plt.show()
+
 # Plot the results
-az.plot_trace(trace, var_names=['intercept','alpha_black', 'alpha_crime', 'alpha_police', 'alpha_investigation', 'alpha_street',  'alpha'], figsize=(10, 20)) #'phi'
+az.plot_trace(trace, var_names=['intercept','alpha_black', 'alpha_asian', 'alpha_hispanic', 'alpha_police', 'alpha_investigation', 'alpha_street'], figsize=(10, 20)) #'phi'
 plt.savefig('./figures/trace_parameters.png', dpi=300)
 plt.show()
-az.plot_forest(trace, var_names=['intercept', 'alpha_black', 'alpha_crime', 'alpha_police', 'alpha_investigation', 'alpha_street', 'alpha'], combined=True, figsize=(10, 10))
+az.plot_forest(trace, var_names=['intercept', 'alpha_black',  'alpha_asian', 'alpha_hispanic', 'alpha_police', 'alpha_investigation', 'alpha_street'], combined=True, figsize=(10, 10))
+plt.savefig('./figures/forest_parameters.png', dpi=300)
 plt.show()
 
 # Extract the parameter means
@@ -248,7 +258,8 @@ mu_crash_count = np.exp(intercept_mean +
                    params_mean.loc["alpha_black"] * data['black_per'] +
                    params_mean.loc["alpha_police"] * data[ 'police_dis'] +
                    params_mean.loc["alpha_investigation"] * data['invest_level'] +
-                   params_mean.loc["alpha_crime"] * data[ 'crime_level'] +
+                   params_mean.loc["alpha_asian"] * data[ 'asian_per'] +
+                    params_mean.loc["alpha_hispanic"] * data[ 'hispanic_per'] +
                    params_mean.loc["alpha_street"] * data[ 'street_len'] +
                    theta_mean+ phi_mean)
 grid_data['pred_crash_count'] = mu_crash_count
